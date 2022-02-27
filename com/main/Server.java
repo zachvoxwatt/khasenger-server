@@ -6,6 +6,7 @@ import java.net.ServerSocket;
 import java.net.Socket;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Scanner;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ThreadFactory;
@@ -15,10 +16,11 @@ public class Server
 	private boolean isRunning = false;
 	
 	private String securityKey = "";
-	private Thread recv;
+	private Thread recv, cmdListener;
 	private Server self;
-	private Runnable listener;
+	private Runnable listener, consoleInput;
 	private ServerSocket sSock;
+	private Scanner scr;
 	private ScheduledExecutorService dcpus;
 	private List<ServerThread> activeConnections;
 	
@@ -51,7 +53,33 @@ public class Server
 			}
 		};
 		
+		this.consoleInput = new Runnable()
+		{
+			public void run()
+			{
+				while (isRunning)
+				{
+					System.out.print(">");
+					String cmd = scr.nextLine();
+					
+					switch (cmd)
+					{
+						case "exit":
+							stopServer();
+							break;
+							
+						case "list users":
+							System.out.printf("Here are list of users...\n\n");
+							break;
+					}
+				}
+			}
+		};
+		
+		this.scr = new Scanner(System.in);
+		
 		this.recv = new Thread(this.listener, "Connection Receptionist");
+		this.cmdListener = new Thread(this.consoleInput, "Console Input Listener");
 	}
 	
 	public void sendAllClient(String content)
@@ -63,9 +91,21 @@ public class Server
 	{
 		this.isRunning = true;
 		this.recv.start();
+		this.cmdListener.start();
 	}
 	
-	public void stopServer() { this.isRunning = false; }
+	public void stopServer() 
+	{
+		System.out.printf("\n[Server / Info] Shutdown protocol started");
+		this.isRunning = false;
+		this.sSock = null;
+		for (ServerThread itor: this.activeConnections) itor.requestClientTerminateConnection();
+		this.dcpus.shutdownNow();
+		this.scr.close();
+		this.securityKey = null;
+		System.out.println("[Server / Info] Shutdown complete. Exiting...\n\n");
+		System.exit(0);
+	}
 	public void terminate(ServerThread svThrd) { this.activeConnections.remove(svThrd); }
 	
 	public String getSecKey() { return this.securityKey; }

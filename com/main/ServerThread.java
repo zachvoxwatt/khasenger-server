@@ -26,25 +26,6 @@ public class ServerThread implements Runnable
 		catch (Exception e) { e.printStackTrace(); }
 	}
 	
-	void closeConnection()
-	{
-		try
-		{
-			this.isActive = false;
-			this.sv.terminate(this);
-			
-			this.cSock.close();
-			this.getFromClient.close();
-			this.sendToClient.close();
-
-			this.cSock = null;
-			this.getFromClient = null;
-			this.sendToClient = null;
-			
-		}
-		catch (Exception e) { e.printStackTrace(); }
-	}
-	
 	@Override
 	public void run() 
 	{
@@ -98,14 +79,14 @@ public class ServerThread implements Runnable
 						String onleaveconsole = String.format("[Server / Info] User %s of client @ %s has left the chat...\n\n", username, this.cSock.getInetAddress().getHostAddress());
 						logConsole(onleaveconsole);
 						break;
-				
+						
 				//unexpect departure request
 					case -127:
 						String onleftconsole = String.format("[Server / Info] Client @ %s has left the chat...\n\n", this.cSock.getInetAddress().getHostAddress());
 						logConsole(onleftconsole);
 						this.isActive = false;
 						break;
-					
+						
 				//disconnect request
 					default:
 						String leaveName = this.getFromClient.readUTF();
@@ -122,6 +103,36 @@ public class ServerThread implements Runnable
 			
 			closeConnection();
 		}
+		catch (Exception e) { e.printStackTrace(); }
+	}
+	
+	void closeConnection()
+	{
+		try
+		{
+			this.isActive = false;
+			this.sv.terminate(this);
+			
+			this.cSock.close();
+			this.getFromClient.close();
+			this.sendToClient.close();
+
+			this.cSock = null;
+			this.getFromClient = null;
+			this.sendToClient = null;
+			
+		}
+		catch (Exception e) { e.printStackTrace(); }
+	}
+	
+	public void requestClientTerminateConnection()
+	{
+		try
+		{
+			this.sendToClient.writeByte(-127);
+			this.sendToClient.flush();
+		}
+		
 		catch (Exception e) { e.printStackTrace(); }
 	}
 	
