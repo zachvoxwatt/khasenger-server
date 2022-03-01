@@ -62,7 +62,17 @@ public class ServerThread implements Runnable
 							logConsole(fail);
 						}
 						break;
-				
+						
+				//'i am still alive' request
+					case 2:
+						this.sendToClient.writeByte(20);
+						this.sendToClient.flush();
+						
+						String still_live = String.format("[Server / Info] Client @ %s told that they are still alive. Accepting request...\n\n", this.cSock.getInetAddress().getHostAddress());
+						logConsole(still_live);
+						
+						break;
+						
 				//post message request
 					case 17:
 						String sender = this.getFromClient.readUTF();

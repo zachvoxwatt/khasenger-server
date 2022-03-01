@@ -84,7 +84,7 @@ public class Server
 	
 	public void sendAllClient(String content)
 	{
-		for (ServerThread itor: this.activeConnections) itor.sendMessage(content);
+		if (this.activeConnections.size() != 1) for (ServerThread itor: this.activeConnections) itor.sendMessage(content);
 	}
 	
 	public void startServer()
@@ -96,7 +96,7 @@ public class Server
 	
 	public void stopServer() 
 	{
-		System.out.printf("\n[Server / Info] Shutdown protocol started");
+		System.out.printf("\n[Server / Info] Shutdown protocol started\n\n");
 		this.isRunning = false;
 		this.sSock = null;
 		for (ServerThread itor: this.activeConnections) itor.requestClientTerminateConnection();
