@@ -36,13 +36,13 @@ public class Server
 		{
 			public void run()
 			{
-				System.out.println("Server is OPERATIONAL and running at port 1765!");
+				System.out.println("**Khasenger Dedicated Server by ZachWattz**\nUp and running at port 1765\n\n\n");
 				while (isRunning)
 				{
 					try
 					{
 						Socket cSock = sSock.accept();
-						System.out.printf("[Server / Incoming] Client at %s has connected\n\n", cSock.getInetAddress().getHostAddress());
+						System.out.printf("[Server / INFO] Client @ %s has connected\n", cSock.getInetAddress().getHostAddress());
 						ServerThread sThrd = new ServerThread(self, cSock);
 						
 						activeConnections.add(sThrd);
@@ -59,7 +59,6 @@ public class Server
 			{
 				while (isRunning)
 				{
-					System.out.print(">");
 					String cmd = scr.nextLine();
 					
 					switch (cmd)
@@ -69,7 +68,7 @@ public class Server
 							break;
 							
 						case "list users":
-							System.out.printf("Here are list of users...\n\n");
+							System.out.printf("Here are list of users...\n");
 							break;
 					}
 				}
@@ -82,9 +81,16 @@ public class Server
 		this.cmdListener = new Thread(this.consoleInput, "Console Input Listener");
 	}
 	
-	public void sendAllClient(String content)
-	{
-		if (this.activeConnections.size() != 1) for (ServerThread itor: this.activeConnections) itor.sendMessage(content);
+	public void sendAllClient(String content) 
+	{ 
+		for (ServerThread itor: this.activeConnections) 
+			itor.sendMessage(content); 
+	}
+	public void notifyLeaveAllClient(String content) 
+	{ 
+		if (this.activeConnections.size() != 1) 
+			for (ServerThread itor: this.activeConnections) 
+				itor.sendMessage(content); 
 	}
 	
 	public void startServer()
@@ -96,14 +102,14 @@ public class Server
 	
 	public void stopServer() 
 	{
-		System.out.printf("\n[Server / Info] Shutdown protocol started\n\n");
+		System.out.printf("\n[Server / INFO] Shutdown protocol started\n");
 		this.isRunning = false;
 		this.sSock = null;
 		for (ServerThread itor: this.activeConnections) itor.requestClientTerminateConnection();
 		this.dcpus.shutdownNow();
 		this.scr.close();
 		this.securityKey = null;
-		System.out.println("[Server / Info] Shutdown complete. Exiting...\n\n");
+		System.out.println("[Server / INFO] Shutdown complete. Exiting...\n\n");
 		System.exit(0);
 	}
 	public void terminate(ServerThread svThrd) { this.activeConnections.remove(svThrd); }
