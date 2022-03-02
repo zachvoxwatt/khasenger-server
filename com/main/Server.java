@@ -86,11 +86,16 @@ public class Server
 		for (ServerThread itor: this.activeConnections) 
 			itor.sendMessage(content); 
 	}
-	public void notifyLeaveAllClient(String content) 
+	public void notifyJoin(String content)
+	{ 
+		for (ServerThread itor: this.activeConnections) itor.notifyJoin(content);
+	}
+	
+	public void notifyLeave(String content, ServerThread sender) 
 	{ 
 		if (this.activeConnections.size() != 1) 
-			for (ServerThread itor: this.activeConnections) 
-				itor.sendMessage(content); 
+			for (ServerThread itor: this.activeConnections)
+				if (!itor.equals(sender)) itor.notifyLeave(content); 
 	}
 	
 	public void startServer()

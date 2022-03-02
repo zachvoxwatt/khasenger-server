@@ -52,7 +52,7 @@ public class ServerThread implements Runnable
 							logConsole(success);
 							
 							String announce = String.format("\t>>>> %s has joined the chat!\n\n", name);
-							this.sv.sendAllClient(announce);
+							this.sv.notifyJoin(announce);
 							break;
 						}
 						else
@@ -92,8 +92,13 @@ public class ServerThread implements Runnable
 						
 				//unexpect departure request
 					case -127:
+						String unexdepartuser = this.getFromClient.readUTF();
+						String unexdepartmsg = String.format("\t>>>> %s unexpectedly left the chat\n\n", unexdepartuser);
 						String onleftconsole = String.format("[Server / INFO] Client @ %s has left the chat...\n", this.cSock.getInetAddress().getHostAddress());
+						
 						logConsole(onleftconsole);
+						this.sv.notifyLeave(unexdepartmsg, this);
+						
 						this.isActive = false;
 						break;
 						
@@ -104,7 +109,7 @@ public class ServerThread implements Runnable
 						logConsole(dis);
 						
 						String onleave = String.format("\t>>>> %s has left the chat\n\n", leaveName);
-						this.sv.notifyLeaveAllClient(onleave);
+						this.sv.notifyLeave(onleave, this);
 						
 						this.isActive = false;
 						break;
@@ -151,6 +156,28 @@ public class ServerThread implements Runnable
 		try
 		{
 			this.sendToClient.writeByte(71);
+			this.sendToClient.writeUTF(text);
+			this.sendToClient.flush();
+		}
+		catch (Exception e) { e.printStackTrace(); }
+	}
+	
+	public void notifyJoin(String text)
+	{
+		try
+		{
+			this.sendToClient.writeByte(70);
+			this.sendToClient.writeUTF(text);
+			this.sendToClient.flush();
+		}
+		catch (Exception e) { e.printStackTrace(); }
+	}
+	
+	public void notifyLeave(String text)
+	{
+		try
+		{
+			this.sendToClient.writeByte(-70);
 			this.sendToClient.writeUTF(text);
 			this.sendToClient.flush();
 		}
