@@ -3,11 +3,11 @@ package main;
 import java.io.DataInputStream;
 import java.io.DataOutputStream;
 import java.net.Socket;
-
 public class ServerThread implements Runnable
 {
 	private boolean isActive = true;
 	
+	private String clientIP, clientInet;
 	private Socket cSock;
 	private Server sv;
 	private DataOutputStream sendToClient;
@@ -15,8 +15,10 @@ public class ServerThread implements Runnable
 	
 	public ServerThread(Server srvr, Socket cSock)
 	{
-		this.cSock = cSock;
 		this.sv = srvr;
+		this.cSock = cSock;
+		this.clientIP = this.cSock.getInetAddress().getHostAddress();
+		this.clientInet = this.cSock.getInetAddress().toString();
 		
 		try
 		{
@@ -33,84 +35,111 @@ public class ServerThread implements Runnable
 		{
 			while (this.isActive)
 			{
-				byte b = this.getFromClient.readByte();
+				String msgType = this.getFromClient.readUTF();
 				
-				switch (b)
+				switch (msgType)
 				{
-				//authentication request
-					case 1:
-						String sec = this.getFromClient.readUTF();
-						String name = this.getFromClient.readUTF();
-						String info = String.format("[Server / AUTH] Client @ %s is authenticating...\n", this.cSock.getInetAddress().getHostAddress());
-						logConsole(info);
+					case "requestAuth":
+						String givenKey = this.getFromClient.readUTF();
 						
-						if (sec.equals(this.sv.getSecKey()))
+						String authProgressLog = String.format("[Server / INFO] Client %s @ %s is authenticating...\n", this.clientInet, this.clientIP);
+						logConsole(authProgressLog);
+								
+						if (givenKey.equals(this.sv.getSecKey()))
 						{
-							this.sendToClient.writeByte(7);
+							this.sendToClient.writeUTF("accepted");
 							this.sendToClient.flush();
-							String success = String.format("[Server / AUTH] Client @ %s authenticated successfully\n", this.cSock.getInetAddress().getHostAddress());
-							logConsole(success);
 							
-							String announce = String.format("\t>>>> %s has joined the chat!\n\n", name);
-							this.sv.notifyJoin(announce);
-							break;
+							String authStatusLog = String.format("[Server / INFO] Client %s @ %s successfully authenticated\n", this.clientInet, this.clientIP);
+							logConsole(authStatusLog);
 						}
+						
 						else
 						{
-							this.sendToClient.writeByte(-1);
-							String fail = String.format("[Server / AUTH] Client @ %s failed authentication. Invalid Token: '%s'\n", this.cSock.getInetAddress().getHostAddress(), sec);
-							logConsole(fail);
+							this.sendToClient.writeUTF("unauthorized");
+							this.sendToClient.flush();
+							
+							String authStatusLog = String.format("[Server / INFO] Client %s @ %s failed authentication. Reason: Invalid Security Key '%s'\n", this.clientInet, this.clientIP, givenKey);
+							logConsole(authStatusLog);
+							
+							this.isActive = false;
 						}
 						break;
 						
-				//'i am still alive' request
-					case 2:
-						this.sendToClient.writeByte(20);
-						this.sendToClient.flush();
+					case "requestValidateName":
+						String sampleName = this.getFromClient.readUTF();
 						
-						String still_live = String.format("[Server / INFO] Client @ %s told that they are still alive. Accepting request...\n", this.cSock.getInetAddress().getHostAddress());
-						logConsole(still_live);
+						String nameValidateLog = String.format("[Server / INFO] User '%s' of client @ %s requested for name validation\n", sampleName, this.clientIP);
+						logConsole(nameValidateLog);
+						
+						if (this.sv.validateName(sampleName))
+						{
+							this.sendToClient.writeUTF("accepted");
+							this.sendToClient.flush();
+							this.sv.addToMap(this.cSock, sampleName);
+							
+							String nameValidateStatusLog = String.format("[Server / INFO] Server accepted name '%s' for client @ %s\n", sampleName, this.clientIP);
+							logConsole(nameValidateStatusLog);
+							
+							String welcomeMsg = String.format("\t>>> %s has joined!\n\n", sampleName);
+							this.sv.notifyJoin(welcomeMsg);
+						}
+						
+						else
+						{
+							this.sendToClient.writeUTF("unavailable");
+							this.sendToClient.flush();
+							
+							String nameValidateStatusLog = String.format("[Server / INFO] Server rejected name '%s' for client @ %s - Reason: Name was taken\n", sampleName, this.clientIP);
+							logConsole(nameValidateStatusLog);
+							
+							this.isActive = false;
+						}
+						break;
+						
+					case "requestPostMSG":
+						String comingText = this.getFromClient.readUTF();
+						
+						String postMessageRequest = String.format("[Server / INFO] Client %s @ %s requested to post a message\n", this.clientInet, this.clientIP);
+						logConsole(postMessageRequest);
+						
+						this.sv.sendAllClient(comingText);
+						break;
+						
+					case "ping":
+						this.sendToClient.writeUTF("pong");
+						
+						String iAmAlive = String.format("[Server / INFO] Client %s @ %s pinged server. Replying with a 'pong'...\n", this.clientInet, this.clientIP);
+						logConsole(iAmAlive);
 						
 						break;
 						
-				//post message request
-					case 17:
-						String sender = this.getFromClient.readUTF();
-						String content = this.getFromClient.readUTF();
+					case "userLeave":
+						String leavingName = this.getFromClient.readUTF();
+						String leavingMsg = String.format("\t>>> %s left\n\n", leavingName);
+						this.sv.notifyLeave(leavingMsg, this);
+						this.sv.removeFromMap(this.cSock);
 						
-						String sendinfo = String.format("[Server / INFO] User '%s' of client @ %s posted a message\n", sender, this.cSock.getInetAddress().getHostAddress());
-						logConsole(sendinfo);
-						this.sv.sendAllClient(content);
-						break;
-						
-				//departure request
-					case -69:
-						String username = this.getFromClient.readUTF();
-						String onleaveconsole = String.format("[Server / INFO] User '%s' of client @ %s has left the chat...\n", username, this.cSock.getInetAddress().getHostAddress());
-						logConsole(onleaveconsole);
-						break;
-						
-				//unexpect departure request
-					case -127:
-						String unexdepartuser = this.getFromClient.readUTF();
-						String unexdepartmsg = String.format("\t>>>> %s unexpectedly left the chat\n\n", unexdepartuser);
-						String onleftconsole = String.format("[Server / INFO] Client @ %s has left the chat...\n", this.cSock.getInetAddress().getHostAddress());
-						
-						logConsole(onleftconsole);
-						this.sv.notifyLeave(unexdepartmsg, this);
+						String onLeave = String.format("[Server / INFO] Client %s @ %s disconnected\n", this.clientInet, this.clientIP);
+						logConsole(onLeave);
 						
 						this.isActive = false;
 						break;
 						
-				//disconnect request
-					default:
-						String leaveName = this.getFromClient.readUTF();
-						String dis = String.format("[Server / INFO] Client @ %s disconnected\n", this.cSock.getInetAddress().getHostAddress());
-						logConsole(dis);
+					case "userLeaveUnexpected":
+						String unexLeavingName = this.getFromClient.readUTF();
+						String unexLeavingMsg = String.format("\t>>> %s left unexpectedly\n\n", unexLeavingName);
+						this.sv.notifyLeave(unexLeavingMsg, this);
+						this.sv.removeFromMap(this.cSock);
 						
-						String onleave = String.format("\t>>>> %s has left the chat\n\n", leaveName);
-						this.sv.notifyLeave(onleave, this);
+						String onAbruptLeave = String.format("[Server / INFO] Client %s @ %s disconnected unexpectedly\n", this.clientInet, this.clientIP);
+						logConsole(onAbruptLeave);
 						
+						this.isActive = false;
+						break;
+						
+					case "confirmShutdown":
+						this.sv.removeFromMap(this.cSock);
 						this.isActive = false;
 						break;
 				}
@@ -118,14 +147,13 @@ public class ServerThread implements Runnable
 			
 			closeConnection();
 		}
-		catch (Exception e) { e.printStackTrace(); }
+		catch (Exception e) {}
 	}
 	
 	void closeConnection()
 	{
 		try
 		{
-			this.isActive = false;
 			this.sv.terminate(this);
 			
 			this.cSock.close();
@@ -140,22 +168,11 @@ public class ServerThread implements Runnable
 		catch (Exception e) { e.printStackTrace(); }
 	}
 	
-	public void requestClientTerminateConnection()
-	{
-		try
-		{
-			this.sendToClient.writeByte(-127);
-			this.sendToClient.flush();
-		}
-		
-		catch (Exception e) { e.printStackTrace(); }
-	}
-	
 	public void sendMessage(String text)
 	{
 		try
 		{
-			this.sendToClient.writeByte(71);
+			this.sendToClient.writeUTF("newMessage");
 			this.sendToClient.writeUTF(text);
 			this.sendToClient.flush();
 		}
@@ -166,7 +183,7 @@ public class ServerThread implements Runnable
 	{
 		try
 		{
-			this.sendToClient.writeByte(70);
+			this.sendToClient.writeUTF("newJoinedUser");
 			this.sendToClient.writeUTF(text);
 			this.sendToClient.flush();
 		}
@@ -177,12 +194,24 @@ public class ServerThread implements Runnable
 	{
 		try
 		{
-			this.sendToClient.writeByte(-70);
+			this.sendToClient.writeUTF("userLeaving");
 			this.sendToClient.writeUTF(text);
 			this.sendToClient.flush();
 		}
 		catch (Exception e) { e.printStackTrace(); }
 	}
 	
+	public void terminateConnection()
+	{
+		try
+		{
+			this.sendToClient.writeUTF("svShutdown");
+			this.sendToClient.flush();
+		}
+		catch (Exception e) { e.printStackTrace(); }
+	}
+	
 	void logConsole(String s) { System.out.printf(s); }
+	
+	public boolean isActive() { return this.isActive; }
 }

@@ -1,52 +1,67 @@
 package main;
 
 import java.awt.EventQueue;
-import java.io.IOException;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Scanner;
+import java.util.UUID;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ThreadFactory;
+import java.util.concurrent.TimeUnit;
+
+import res.ClientUser;
 
 public class Server
 {
-	private boolean isRunning = false;
+	private boolean mainThreadRunning = false, consoleInputRunning = false;
 	
 	private String securityKey = "";
+	private Scanner scr;
 	private Thread recv, cmdListener;
 	private Server self;
-	private Runnable listener, consoleInput;
+	private Runnable listener, consoleInput, clientDisconnect, serverStopper;
 	private ServerSocket sSock;
-	private Scanner scr;
-	private ScheduledExecutorService dcpus;
 	private List<ServerThread> activeConnections;
+	private Map<Socket, ClientUser> usersMap;
+	private ScheduledExecutorService dcpus;
 	
-	public Server(String seckey)
+	public Server()
 	{
-		this.securityKey = seckey;
+		this.securityKey = "a";
 		this.self = this;
-		this.dcpus = Executors.newScheduledThreadPool(10, new ThreadNames());
+		this.dcpus = Executors.newScheduledThreadPool(5, new ThreadNames());
 		this.activeConnections = new ArrayList<>();
-		try { this.sSock = new ServerSocket(1765); } catch (IOException e) { e.printStackTrace(); }
+		this.usersMap = new HashMap<>();
+		try { this.sSock = new ServerSocket(1765); } 
+		catch (Exception e) 
+		{ 
+			System.out.println("Another instance of the server is running! Exiting this"); 
+			System.exit(0); 
+		}
 		
 		this.listener = new Runnable()
 		{
 			public void run()
 			{
-				System.out.println("**Khasenger Dedicated Server by ZachWattz**\nUp and running at port 1765\n\n\n");
-				while (isRunning)
+				System.out.println("**Khasenger Dedicated Server by ZachWattz**\nUp and running at port 1765\n-------------------------------------------\n\n");
+				while (mainThreadRunning)
 				{
 					try
 					{
 						Socket cSock = sSock.accept();
-						System.out.printf("[Server / INFO] Client @ %s has connected\n", cSock.getInetAddress().getHostAddress());
-						ServerThread sThrd = new ServerThread(self, cSock);
-						
-						activeConnections.add(sThrd);
-						dcpus.execute(sThrd);
+						if (mainThreadRunning)
+						{
+							System.out.printf("[Server / INFO] Client @ %s has connected\n", cSock.getInetAddress().getHostAddress());
+							ServerThread sThrd = new ServerThread(self, cSock);
+							
+							activeConnections.add(sThrd);
+							dcpus.execute(sThrd);
+						}
 					}
 					catch (Exception e) { e.printStackTrace(); }
 				}
@@ -57,21 +72,57 @@ public class Server
 		{
 			public void run()
 			{
-				while (isRunning)
+				while (consoleInputRunning)
 				{
 					String cmd = scr.nextLine();
 					
 					switch (cmd)
 					{
 						case "exit":
-							stopServer();
+							consoleInputRunning = false;
+							mainThreadRunning = false;
+							dcpus.schedule(clientDisconnect, 500, TimeUnit.MILLISECONDS);
 							break;
 							
 						case "list users":
-							System.out.printf("Here are list of users...\n");
+							if (usersMap.size() != 0)
+							{
+								if (usersMap.size() == 1)
+									System.out.printf("\t-->There is 1 user connected:\n%s", toStringListOnlineUsers());
+								else 
+									System.out.printf("\t-->There are %d users connected:\n%s", usersMap.size(), toStringListOnlineUsers());
+							}
+							else System.out.printf("\t-->There is no user connected at the moment\n\n");
 							break;
 					}
 				}
+			}
+		};
+		
+		this.clientDisconnect = new Runnable()
+		{
+			public void run()
+			{
+				System.out.printf("\n[Server / INFO] Shutdown protocol started\n");
+				for (ServerThread itor: activeConnections) itor.terminateConnection();
+				dcpus.schedule(serverStopper, 3, TimeUnit.SECONDS);
+			}
+		};
+		
+		this.serverStopper = new Runnable()
+		{
+			public void run()
+			{
+				securityKey = null;
+				scr.close();
+				sSock = null;
+				dcpus.shutdown();
+				activeConnections.clear();
+				usersMap.clear();
+				self = null;
+				System.out.printf("[Server / INFO] Shutdown completed. Exiting...\n");
+				System.gc();
+				System.exit(0);
 			}
 		};
 		
@@ -79,47 +130,73 @@ public class Server
 		
 		this.recv = new Thread(this.listener, "Connection Receptionist");
 		this.cmdListener = new Thread(this.consoleInput, "Console Input Listener");
+		
+		startServer();
+	}
+	
+	public void startServer()
+	{
+		this.mainThreadRunning = true;
+		this.consoleInputRunning = true;
+		this.recv.start();
+		this.cmdListener.start();
 	}
 	
 	public void sendAllClient(String content) 
 	{ 
 		for (ServerThread itor: this.activeConnections) 
-			itor.sendMessage(content); 
+			itor.sendMessage(content);
 	}
 	public void notifyJoin(String content)
 	{ 
-		for (ServerThread itor: this.activeConnections) itor.notifyJoin(content);
+		for (ServerThread itor: this.activeConnections) 
+			itor.notifyJoin(content);
 	}
 	
 	public void notifyLeave(String content, ServerThread sender) 
 	{ 
-		if (this.activeConnections.size() != 1) 
+		if (this.activeConnections.size() != 1)
 			for (ServerThread itor: this.activeConnections)
 				if (!itor.equals(sender)) itor.notifyLeave(content); 
 	}
 	
-	public void startServer()
-	{
-		this.isRunning = true;
-		this.recv.start();
-		this.cmdListener.start();
-	}
-	
-	public void stopServer() 
-	{
-		System.out.printf("\n[Server / INFO] Shutdown protocol started\n");
-		this.isRunning = false;
-		this.sSock = null;
-		for (ServerThread itor: this.activeConnections) itor.requestClientTerminateConnection();
-		this.dcpus.shutdownNow();
-		this.scr.close();
-		this.securityKey = null;
-		System.out.println("[Server / INFO] Shutdown complete. Exiting...\n\n");
-		System.exit(0);
-	}
 	public void terminate(ServerThread svThrd) { this.activeConnections.remove(svThrd); }
 	
+	public boolean validateName(String givenName)
+	{
+		boolean success = true;
+		if (this.usersMap.size() == 0) return success;
+		
+		else
+		{
+			for (Map.Entry<Socket, ClientUser> itor: this.usersMap.entrySet())
+				if (itor.getValue().getName().equals(givenName)) { success = false; break; }
+		}
+		return success;
+	}
+	
+	public void addToMap(Socket sck, String name)
+	{
+		ClientUser clusr = new ClientUser(name, createUUID());
+		this.usersMap.put(sck, clusr);
+	}
+	
+	public void removeFromMap(Socket sck) { this.usersMap.remove(sck); }
+	
+	public String toStringListOnlineUsers()
+	{
+		String returner = "";
+		
+		for (Map.Entry<Socket, ClientUser> itor: this.usersMap.entrySet())
+			returner += "  \t\t- " + itor.getValue().getName() + "\n";
+		
+		returner += "\n\tEnd of Report\n\n";
+		return returner;
+	}
+	
+	protected UUID createUUID() { return UUID.randomUUID(); }
 	public String getSecKey() { return this.securityKey; }
+	public Map<Socket, ClientUser> getUserMap() { return this.usersMap; }
 	
 	class ThreadNames implements ThreadFactory
 	{
@@ -132,6 +209,7 @@ public class Server
 		}
 	}
 	
+	/*
 	public static void main(String[] args) 
 	{ 
 		EventQueue.invokeLater(() 
@@ -141,4 +219,7 @@ public class Server
 			}
 		);
 	}
+	*/
+	public static void main(String[] args) { EventQueue.invokeLater(Server::new); }
+	
 }
