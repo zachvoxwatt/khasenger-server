@@ -3,6 +3,7 @@ package main;
 import java.io.DataInputStream;
 import java.io.DataOutputStream;
 import java.net.Socket;
+
 public class ServerThread implements Runnable
 {
 	private boolean isActive = true;
@@ -214,4 +215,8 @@ public class ServerThread implements Runnable
 	void logConsole(String s) { System.out.printf(s); }
 	
 	public boolean isActive() { return this.isActive; }
+	
+	public Server getServer() { return this.sv; }
+	public DataOutputStream getOutputStream() { return this.sendToClient; }
+	public DataInputStream getInputStream() { return this.getFromClient; }
 }

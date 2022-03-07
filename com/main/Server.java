@@ -5,8 +5,10 @@ import java.net.ServerSocket;
 import java.net.Socket;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
+import java.util.Queue;
 import java.util.Scanner;
 import java.util.UUID;
 import java.util.concurrent.Executors;
@@ -15,6 +17,7 @@ import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
 
 import res.ClientUser;
+import res.Message;
 
 public class Server
 {
@@ -28,6 +31,7 @@ public class Server
 	private ServerSocket sSock;
 	private List<ServerThread> activeConnections;
 	private Map<Socket, ClientUser> usersMap;
+	private Queue<Message> msgQueue;
 	private ScheduledExecutorService dcpus;
 	
 	public Server()
@@ -36,8 +40,10 @@ public class Server
 		this.self = this;
 		this.dcpus = Executors.newScheduledThreadPool(5, new ThreadNames());
 		this.activeConnections = new ArrayList<>();
+		this.msgQueue = new LinkedList<>();
 		this.usersMap = new HashMap<>();
 		try { this.sSock = new ServerSocket(1765); } 
+		
 		catch (Exception e) 
 		{ 
 			System.out.println("Another instance of the server is running! Exiting this"); 
@@ -105,7 +111,7 @@ public class Server
 			{
 				System.out.printf("\n[Server / INFO] Shutdown protocol started\n");
 				for (ServerThread itor: activeConnections) itor.terminateConnection();
-				dcpus.schedule(serverStopper, 3, TimeUnit.SECONDS);
+				dcpus.schedule(serverStopper, 2, TimeUnit.SECONDS);
 			}
 		};
 		
@@ -141,16 +147,20 @@ public class Server
 		this.recv.start();
 		this.cmdListener.start();
 	}
-	
 	public void sendAllClient(String content) 
 	{ 
 		for (ServerThread itor: this.activeConnections) 
 			itor.sendMessage(content);
+		
+		pushMessage(content);
 	}
+	public void pushMessage(String text) { this.msgQueue.add(new Message(text)); }
 	public void notifyJoin(String content)
 	{ 
 		for (ServerThread itor: this.activeConnections) 
 			itor.notifyJoin(content);
+		
+		pushMessage(content);
 	}
 	
 	public void notifyLeave(String content, ServerThread sender) 
@@ -158,6 +168,7 @@ public class Server
 		if (this.activeConnections.size() != 1)
 			for (ServerThread itor: this.activeConnections)
 				if (!itor.equals(sender)) itor.notifyLeave(content); 
+		pushMessage(content);
 	}
 	
 	public void terminate(ServerThread svThrd) { this.activeConnections.remove(svThrd); }
@@ -196,7 +207,9 @@ public class Server
 	
 	protected UUID createUUID() { return UUID.randomUUID(); }
 	public String getSecKey() { return this.securityKey; }
+	public Queue<Message> getMessageQueue() { return this.msgQueue; }
 	public Map<Socket, ClientUser> getUserMap() { return this.usersMap; }
+	public ScheduledExecutorService requestDCPUs() { return this.dcpus; }
 	
 	class ThreadNames implements ThreadFactory
 	{
